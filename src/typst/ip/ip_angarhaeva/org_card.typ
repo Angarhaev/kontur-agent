@@ -1,4 +1,4 @@
-#let org = json("templates_json/org_card.json")
+#let org = json(sys.inputs.at("org_data"))
 
 #set page(paper: "a4", margin: (x: 2cm, y: 2cm))
 #set text(font: "Times New Roman", size: 12pt)

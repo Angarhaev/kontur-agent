@@ -1,7 +1,10 @@
+import os.path
 from pathlib import Path
 import json
 from dataclasses import asdict
 import subprocess
+import tempfile
+import uuid
 
 from src.models import Bank, Customer, WorkItem, Organization
 from src.exceptions import DocsGeneratorError
@@ -105,26 +108,41 @@ class DebugGenerator:
         """Генерирует PDF-карточку организации (версия для отладки)"""
 
         organization = DebugGenerator.load_organization_from_file(org_slug, org_type)
-
-        DebugGenerator.save_req_file(organization, f"org_card.json", asdict(organization))
-
         base_dir = f"typst/{organization.org_type}/{organization.slug}"
         check_required_typst_files(base_dir)
 
-        output_dir = Path(f"output/{organization.org_type}/{organization.slug}")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        temp_json_name = f"org_{uuid.uuid4().hex}.json"
+        temp_json_path = Path(base_dir) / temp_json_name
 
-        command = [
-            "typst",
-            "compile",
-            "--root", "./typst",
-            "--font-path", "typst/fonts",
-            f"{base_dir}/org_card.typ",
-            f"{output_dir}/org_card.pdf"
-        ]
+        with open(temp_json_path, "w", encoding="utf-8") as temp_file:
+            json.dump(asdict(organization), temp_file, ensure_ascii=False, indent=2)
 
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
-        return f"✅ PDF карточка организации {organization.name} создана: {output_dir}/org_card.pdf"
+        try:
+            output_dir = Path(f"output/{organization.org_type}/{organization.slug}")
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            command = [
+                "typst",
+                "compile",
+                "--root", "./typst",
+                "--font-path", "typst/fonts",
+                "--input", f"org_data={temp_json_name}",
+                f"{base_dir}/org_card.typ",
+                f"{output_dir}/org_card.pdf"
+            ]
+
+            result = subprocess.run(command, capture_output=True, text=True)
+            print(result.stdout)
+            print()
+            print(result.stderr)
+            if result.returncode != 0:
+                raise subprocess.CalledProcessError(result.returncode, command, result.stdout, result.stderr)
+
+            return f"✅ PDF карточка организации {organization.name} создана: {output_dir}/org_card.pdf"
+        finally:
+            if os.path.exists(temp_json_path):
+                os.unlink(temp_json_path)
+
 
     @staticmethod
     def generate_pdf_invoice(customer: Customer, jobs: list[WorkItem]) -> str:
